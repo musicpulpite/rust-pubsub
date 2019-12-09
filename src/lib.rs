@@ -1,53 +1,59 @@
 extern crate ws;
-use ws::{Handler, Sender, Message};
+use ws::{ Handler, Sender, Message, Error, ErrorKind };
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{ BTreeSet, HashMap };
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::borrow::Cow;
+use std::cmp::{ Ord, Ordering };
 
 pub struct Server {
-    // This clients map should be temporary, eventually the clients (Sender struct)
-    // will just be referenced directly from the channels
-    pub clients: HashMap<Token, Sender>,
-    pub channels: HashMap<String, BTreeSet<Token>>
+    pub channels: HashMap<String, BTreeSet<Sender>>
 }
 
 impl Server {
     pub fn new() -> Server {
         Server {
-            clients: HashMap::new(),
             channels: HashMap::new()
         }
     }
 
-    // For now I won't return any success/failure indication
-    pub fn add_client(&mut self, client: Sender) -> () {
-        self.clients.insert(client.token(), client);
-    }
-
-    pub fn sub_client(&mut self, client_token: Token, channel: String) -> Result<(), String> {
+    pub fn sub_client(&mut self, sender: Sender, channel: String) -> Result<(), String> {
         // Cloning the channel string here for now so I can use it below, will come back and reassess
         let subbed_clients = self.channels.entry(channel.clone()).or_insert(BTreeSet::new());
-        let result = subbed_clients.insert(client_token);
+        let result = subbed_clients.insert(sender);
 
         return if result {
             Ok(())
         } else {
-            Err(format!("Client {:?} already subscribed to channel {}.", client_token, channel))
+            Err(format!("Client {:?} already subscribed to channel {}.", sender, channel))
         }
     }
 
-    pub fn unsub_client(&mut self, client_token: Token, channel: String) -> Result<(), String> {
+    pub fn unsub_client(&mut self, sender: &Sender, channel: String) -> Result<(), String> {
         // Illuminating distinction about how Rust works, the methods above needed owned vars - these need refs.
         if let Some(subbed_clients) = self.channels.get_mut(&channel) {
-            subbed_clients.remove(&client_token);
+            subbed_clients.remove(sender);
             return Ok(())
         } else {
-            return Err(format!("Client {:?} was never subscribed to channel {}.", client_token, channel))
+            return Err(format!("Client {:?} was never subscribed to channel {}.", sender, channel))
         }
     }
 }
 
+// I may need to "Cover" the ws::Sender type in order to be able to impl the ordering trait for it
+// So that BTreeSet can maintain an ordered set of Sender structs
+struct CustomSender<T>(T);
+
+impl<T> Ord for CustomSender<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.token().cmp(&other.token())
+    }
+}
+
 pub struct SenderHandle {
-    sender: Sender
+    sender: CustomSender,
+    server_ref: Rc<RefCell<Server>>
 }
 
 pub enum PubSubMessage {
@@ -73,14 +79,13 @@ impl SenderHandle {
 }
 
 impl Handler for SenderHandle {
-    fn on_message(&mut self, msg: Message) -> Result<(), ws::Err> {
-        match self.parse_message(msg.into_text().unwrap()).unwrap() {
-            PubSubMessage::SUBSCRIBE { channel } => ws_server.sub_client(client_token, channel).unwrap(),
-            PubSubMessage::UNSUBSCRIBE { channel } => ws_server.unsub_client(client_token, channel).unwrap(),
-            PubSubMessage::PUBLISH { channel, msg } => println!("Publishing {} on channel {}", msg, channel),
-            _ => Err("Some other WS message".to_string())
+    fn on_message(&mut self, msg: Message) -> Result<(), Error> {
+        return match self.parse_message(msg.into_text().unwrap()).unwrap() {
+            // Probably going to need to use Rc's here as well since BTreeSet::insert needs to take ownership
+            PubSubMessage::SUBSCRIBE { channel } => self.server_ref.sub_client(self.sender, channel),
+            PubSubMessage::UNSUBSCRIBE { channel } => self.server_ref.unsub_client(&self.sender, channel),
+            PubSubMessage::PUBLISH { channel, msg } => Ok(()),
+            _ => Error { kind: ErrorKind::Protocol, details: Cow::Borrowed("Some other WS message") }
         }
-
-        Ok(())
     }
 }

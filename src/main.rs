@@ -2,33 +2,19 @@ extern crate ws;
 use ws::{ listen, Message };
 
 use std::{env, process};
+use std::rc::Rc;
+use std::cell::RefCell;
 
-use rust_pubsub::Server;
-use rust_pubsub::{ parse_message, PubSubMessage };
+use rust_pubsub::{ Server, SenderHandle };
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     let port = &args[1];
 
-    let mut ws_server = Server::new();
+    let mut ws_server = Rc::new(RefCell::new(Server::new())); // Will provide internal mutability to all of the client handlers
 
-    if let Err(error) = listen(format!("127.0.0.1:{}", port), |client| { 
-        let client_token = client.token().clone(); // Probably temporary as well
-        ws_server.add_client(client);
-
-        move |msg: Message| {
-            println!("Got message from client {:?}.", client_token);
-            println!("{}", msg);
-
-            match parse_message(msg.into_text().unwrap()).unwrap() {
-                PubSubMessage::SUBSCRIBE { channel } => ws_server.sub_client(client_token, channel).unwrap(),
-                PubSubMessage::UNSUBSCRIBE { channel } => ws_server.unsub_client(client_token, channel).unwrap(),
-                PubSubMessage::PUBLISH { channel, msg } => println!("Publishing {} on channel {}", msg, channel),
-                _ => println!("Some other WS message")
-            }
-
-            Ok(())
-        }
+    if let Err(error) = listen(format!("127.0.0.1:{}", port), |sender| {
+        SenderHandle { sender, server_ref: ws_server.clone() }
     }) {
         println!("Failed to start WebSocket server on port {}.", port);
         println!("Error: {}", error);
