@@ -1,11 +1,18 @@
 extern crate ws;
-use ws::{ Handler, Sender, Message, Error, ErrorKind };
+use ws::{ Handler, Sender, Message, Error, ErrorKind, util::Token };
 
 use std::collections::{ BTreeSet, HashMap };
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::borrow::Cow;
 use std::cmp::{ Ord, Ordering };
+
+// Attempt to implement cmp for ws::Sender, hopefully this will satisfy the BTreeSet's need
+// for the std::cmp::Ord trait to be implemented
+
+pub trait SenderExt<T> {
+    fn cmp(&self, other: &Self) -> Ord
+}
 
 pub struct Server {
     pub channels: HashMap<String, BTreeSet<Sender>>
@@ -43,16 +50,22 @@ impl Server {
 
 // I may need to "Cover" the ws::Sender type in order to be able to impl the ordering trait for it
 // So that BTreeSet can maintain an ordered set of Sender structs
-struct CustomSender<T>(T);
+// struct CustomSender<T>(T);
 
-impl<T> Ord for CustomSender<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.token().cmp(&other.token())
-    }
-}
+// impl CustomSender { // Probably wrong
+//     fn token(&self) -> Token {
+//         self.T.token()
+//     }
+// }
+
+// impl<T> Ord for CustomSender<T> {
+//     fn cmp(&self, other: &Self) -> Ordering {
+//         self.token().cmp(&other.token())
+//     }
+// }
 
 pub struct SenderHandle {
-    sender: CustomSender,
+    sender: Sender,
     server_ref: Rc<RefCell<Server>>
 }
 
