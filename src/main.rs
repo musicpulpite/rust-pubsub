@@ -1,20 +1,20 @@
 extern crate ws;
-use ws::{ listen, Message };
+use ws::listen;
 
 use std::{env, process};
 use std::rc::Rc;
 use std::cell::RefCell;
 
-use rust_pubsub::{ Server, SenderHandle };
+use rust_pubsub::{ Server, ClientHandle };
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     let port = &args[1];
 
-    let mut ws_server = Rc::new(RefCell::new(Server::new())); // Will provide internal mutability to all of the client handlers
-    // let mut ws_server = Arc::new(Mutex::new(Server::new()))
-    if let Err(error) = listen(([127, 0, 0, 1], port)), |sender| {
-        SenderHandle { sender, server_ref: ws_server.clone() }
+    let ws_server = Rc::new(RefCell::new(Server::new())); // Will provide internal mutability to all of the client handlers
+
+    if let Err(error) = listen(format!("127.0.0.1:{}", port), |client| {
+        ClientHandle { client, ws_server_ref: ws_server.clone() }
     }) {
         println!("Failed to start WebSocket server on port {}.", port);
         println!("Error: {}", error);
@@ -23,14 +23,3 @@ fn main() {
 
     }
 }
-/**
-
-|sender| async {
-    ws_server.lock();
-    some_op().await;
-    some_other_ope(ws_server).await
-}
-
-
-
-*/
