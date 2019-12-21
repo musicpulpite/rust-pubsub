@@ -10,9 +10,23 @@ use std::cmp::{ Ord, Ordering };
 // Attempt to implement cmp for ws::Sender, hopefully this will satisfy the BTreeSet's need
 // for the std::cmp::Ord trait to be implemented
 
-pub trait SenderExt<T> {
-    fn cmp(&self, other: &Self) -> Ord
+struct MySender(Sender);
+
+impl Ord for MySender {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.token().cmp(other.0.token())
+    }
 }
+
+impl Deref<Sender> for MySender {
+    fn deref(&self) -> &Sender {
+        self.0
+    }
+}
+
+// pub trait SenderExt<T> {
+//     fn cmp(&self, other: &Self) -> Ord
+// }
 
 pub struct Server {
     pub channels: HashMap<String, BTreeSet<Sender>>
@@ -37,7 +51,7 @@ impl Server {
         }
     }
 
-    pub fn unsub_client(&mut self, sender: &Sender, channel: String) -> Result<(), String> {
+    pub fn unsub_client(&mut self, sender: &Sender, channel: AsRef<str>) -> Result<(), String> {
         // Illuminating distinction about how Rust works, the methods above needed owned vars - these need refs.
         if let Some(subbed_clients) = self.channels.get_mut(&channel) {
             subbed_clients.remove(sender);

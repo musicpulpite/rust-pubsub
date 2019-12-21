@@ -12,8 +12,8 @@ fn main() {
     let port = &args[1];
 
     let mut ws_server = Rc::new(RefCell::new(Server::new())); // Will provide internal mutability to all of the client handlers
-
-    if let Err(error) = listen(format!("127.0.0.1:{}", port), |sender| {
+    // let mut ws_server = Arc::new(Mutex::new(Server::new()))
+    if let Err(error) = listen(([127, 0, 0, 1], port)), |sender| {
         SenderHandle { sender, server_ref: ws_server.clone() }
     }) {
         println!("Failed to start WebSocket server on port {}.", port);
@@ -23,3 +23,14 @@ fn main() {
 
     }
 }
+/**
+
+|sender| async {
+    ws_server.lock();
+    some_op().await;
+    some_other_ope(ws_server).await
+}
+
+
+
+*/
